@@ -1,19 +1,205 @@
-const fs=require('fs');const path=require('path');
-const ROOT=__dirname,CONTENT=path.join(ROOT,'content','posts'),OUT=path.join(ROOT,'public'),SRC=path.join(ROOT,'src');
-const config=JSON.parse(fs.readFileSync(path.join(ROOT,'site.config.json'),'utf8'));
-if(process.env.SITE_URL)config.baseUrl=process.env.SITE_URL;if(process.env.NAVER_SITE_VERIFICATION)config.naverSiteVerification=process.env.NAVER_SITE_VERIFICATION;
-const base=String(config.baseUrl||'').replace(/\/$/,'');if(!/^https?:\/\//.test(base))throw new Error('SITE_URL 또는 baseUrl을 https://... 형태로 설정하세요.');
-const esc=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
-function fm(t){t=t.replace(/^\uFEFF/,'');if(!t.startsWith('---\n'))return{m:{},b:t};const e=t.indexOf('\n---\n',4);if(e<0)return{m:{},b:t};const m={};for(const l of t.slice(4,e).split('\n')){const i=l.indexOf(':');if(i>0)m[l.slice(0,i).trim()]=l.slice(i+1).trim()}return{m,b:t.slice(e+5).trim()}}
-function inline(s){return esc(s).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" rel="noopener noreferrer">$1</a>')}
-function md(s){let out=[],p=[],list=false,code=false,buf=[];const fp=()=>{if(p.length){out.push(`<p>${inline(p.join(' '))}</p>`);p=[]}};const fl=()=>{if(list){out.push('</ul>');list=false}};for(const l of s.replace(/\r/g,'').split('\n')){if(l.startsWith('```')){fp();fl();if(code){out.push(`<pre><code>${esc(buf.join('\n'))}</code></pre>`);buf=[]}code=!code;continue}if(code){buf.push(l);continue}if(!l.trim()){fp();fl();continue}const h=l.match(/^(#{2,4})\s+(.+)/);if(h){fp();fl();out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`);continue}const u=l.match(/^[-*]\s+(.+)/);if(u){fp();if(!list){out.push('<ul>');list=true}out.push(`<li>${inline(u[1])}</li>`);continue}p.push(l.trim())}fp();fl();return out.join('\n')}
-function shell({title,desc,url,body,type='website'}){const verify=config.naverSiteVerification&&!config.naverSiteVerification.includes('NAVER_SITE_VERIFICATION_CODE')?`<meta name="naver-site-verification" content="${esc(config.naverSiteVerification)}">`:'';return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="google-site-verification" content="nCJS8MruCwdhY1zVoGXdNQXjJQwBQ2y4733sBP37YE4"><title>${esc(title)}</title><meta name="description" content="${esc(desc)}"><meta name="robots" content="index,follow,max-image-preview:large">${verify}<link rel="canonical" href="${esc(url)}"><link rel="alternate" type="application/rss+xml" href="/rss.xml"><meta property="og:type" content="${type}"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}"><meta property="og:url" content="${esc(url)}"><link rel="stylesheet" href="/assets/styles.css"></head><body><header class="site-header"><div class="header-inner"><a class="brand" href="/">${esc(config.title)}</a><nav class="nav"><a href="/">글 목록</a><a href="/rss.xml">RSS</a></nav></div></header>${body}<footer class="site-footer"><div class="wrap footer-inner"><span>© ${new Date().getFullYear()} ${esc(config.author)}</span><span>Static Blog</span></div></footer></body></html>`}
-fs.rmSync(OUT,{recursive:true,force:true});fs.mkdirSync(path.join(OUT,'assets'),{recursive:true});fs.mkdirSync(path.join(OUT,'posts'),{recursive:true});fs.copyFileSync(path.join(SRC,'styles.css'),path.join(OUT,'assets','styles.css'));fs.copyFileSync(path.join(SRC,'app.js'),path.join(OUT,'assets','app.js'));
-const posts=fs.readdirSync(CONTENT).filter(x=>x.endsWith('.md')).map(f=>{const{x:m,b}= {x:fm(fs.readFileSync(path.join(CONTENT,f),'utf8')).m,b:fm(fs.readFileSync(path.join(CONTENT,f),'utf8')).b};const slug=m.slug||path.basename(f,'.md'),date=m.date||new Date().toISOString().slice(0,10);return{title:m.title||slug,slug,date,modified:m.modified||date,description:m.description||b.replace(/[#*`]/g,'').slice(0,150),category:m.category||'기록',tags:(m.tags||'').split(',').map(x=>x.trim()).filter(Boolean),html:md(b),url:`${base}/posts/${encodeURIComponent(slug)}/`}}).sort((a,b)=>b.date.localeCompare(a.date));
-for(const p of posts){const tags=p.tags.map(t=>`<span class="tag">#${esc(t)}</span>`).join(' '),body=`<main class="wrap article-shell"><article class="article"><div class="article-meta"><span>${esc(p.date)}</span><span>${esc(p.category)}</span></div><h1>${esc(p.title)}</h1><p>${esc(p.description)}</p><div>${tags}</div><div class="article-body">${p.html}</div></article></main>`,dir=path.join(OUT,'posts',p.slug);fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,'index.html'),shell({title:`${p.title} | ${config.title}`,desc:p.description,url:p.url,body,type:'article'}))}
-const cats=[...new Set(posts.map(p=>p.category))],cards=posts.map(p=>`<article class="post-card" data-post-card data-category="${esc(p.category)}" data-search="${esc([p.title,p.description,p.category,...p.tags].join(' ').toLowerCase())}"><a href="/posts/${encodeURIComponent(p.slug)}/"><div class="meta"><span>${p.date}</span><span>${esc(p.category)}</span></div><h2>${esc(p.title)}</h2><p>${esc(p.description)}</p></a></article>`).join('');
-const home=`<main class="wrap"><section class="hero"><h1>${esc(config.title)}</h1><p>${esc(config.description)}</p></section><div class="controls"><input class="search" data-search type="search" placeholder="글 검색"><select class="category-filter" data-category><option value="">전체 카테고리</option>${cats.map(c=>`<option>${esc(c)}</option>`).join('')}</select></div><section class="post-grid">${cards}</section><p class="empty" data-empty hidden>조건에 맞는 글이 없습니다.</p></main><script src="/assets/app.js" defer></script>`;fs.writeFileSync(path.join(OUT,'index.html'),shell({title:config.title,desc:config.description,url:`${base}/`,body:home}));
-fs.writeFileSync(path.join(OUT,'posts.json'),JSON.stringify(posts.map(({html,...p})=>p),null,2));
-fs.writeFileSync(path.join(OUT,'sitemap.xml'),`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${[`<url><loc>${esc(base)}/</loc></url>`,...posts.map(p=>`<url><loc>${esc(p.url)}</loc><lastmod>${p.modified}</lastmod></url>`)].join('\n')}\n</urlset>\n`);
-fs.writeFileSync(path.join(OUT,'rss.xml'),`<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>${esc(config.title)}</title><link>${esc(base)}/</link><description>${esc(config.description)}</description>${posts.slice(0,50).map(p=>`<item><title>${esc(p.title)}</title><link>${esc(p.url)}</link><guid>${esc(p.url)}</guid><pubDate>${new Date(`${p.date}T00:00:00+09:00`).toUTCString()}</pubDate><description><![CDATA[${p.html.replace(/]]>/g,']]]]><![CDATA[>')}]]></description></item>`).join('')}</channel></rss>`);
-fs.writeFileSync(path.join(OUT,'robots.txt'),`User-agent: *\nAllow: /\n\nUser-agent: Yeti\nAllow: /\n\nSitemap: ${base}/sitemap.xml\n`);fs.writeFileSync(path.join(OUT,'404.html'),shell({title:`404 | ${config.title}`,desc:'페이지를 찾을 수 없습니다.',url:`${base}/404.html`,body:'<main class="wrap article-shell"><article class="article"><h1>페이지를 찾을 수 없습니다.</h1><p><a href="/">홈으로 돌아가기</a></p></article></main>'}));console.log(`빌드 완료: ${posts.length}개 글`);
+const fs = require('fs');
+const path = require('path');
+
+const ROOT = __dirname;
+const CONTENT = path.join(ROOT, 'content', 'posts');
+const OUT = path.join(ROOT, 'public');
+const SRC = path.join(ROOT, 'src');
+
+const config = JSON.parse(fs.readFileSync(path.join(ROOT, 'site.config.json'), 'utf8'));
+if (process.env.SITE_URL) config.baseUrl = process.env.SITE_URL;
+if (process.env.NAVER_SITE_VERIFICATION) config.naverSiteVerification = process.env.NAVER_SITE_VERIFICATION;
+
+const base = String(config.baseUrl || '').replace(/\/$/, '');
+if (!/^https?:\/\//.test(base)) {
+  throw new Error('SITE_URL 또는 baseUrl을 https://... 형태로 설정하세요.');
+}
+
+const basePath = new URL(base).pathname.replace(/\/$/, '');
+const esc = (s) => String(s ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#039;');
+
+function applyBasePath(html) {
+  if (!basePath) return html;
+  return html.replace(/\b(href|src)="\/(?!\/)/g, `$1="${basePath}/`);
+}
+
+function fm(text) {
+  const t = text.replace(/^\uFEFF/, '');
+  if (!t.startsWith('---\n')) return { m: {}, b: t };
+  const end = t.indexOf('\n---\n', 4);
+  if (end < 0) return { m: {}, b: t };
+  const m = {};
+  for (const line of t.slice(4, end).split('\n')) {
+    const i = line.indexOf(':');
+    if (i > 0) m[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+  }
+  return { m, b: t.slice(end + 5).trim() };
+}
+
+function inline(s) {
+  return esc(s)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" rel="noopener noreferrer">$1</a>');
+}
+
+function md(s) {
+  const out = [];
+  let paragraph = [];
+  let list = false;
+  let code = false;
+  let buf = [];
+
+  const flushParagraph = () => {
+    if (paragraph.length) {
+      out.push(`<p>${inline(paragraph.join(' '))}</p>`);
+      paragraph = [];
+    }
+  };
+  const flushList = () => {
+    if (list) {
+      out.push('</ul>');
+      list = false;
+    }
+  };
+
+  for (const line of s.replace(/\r/g, '').split('\n')) {
+    if (line.startsWith('```')) {
+      flushParagraph();
+      flushList();
+      if (code) {
+        out.push(`<pre><code>${esc(buf.join('\n'))}</code></pre>`);
+        buf = [];
+      }
+      code = !code;
+      continue;
+    }
+    if (code) {
+      buf.push(line);
+      continue;
+    }
+    if (!line.trim()) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+    const h = line.match(/^(#{2,4})\s+(.+)/);
+    if (h) {
+      flushParagraph();
+      flushList();
+      out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`);
+      continue;
+    }
+    const u = line.match(/^[-*]\s+(.+)/);
+    if (u) {
+      flushParagraph();
+      if (!list) {
+        out.push('<ul>');
+        list = true;
+      }
+      out.push(`<li>${inline(u[1])}</li>`);
+      continue;
+    }
+    paragraph.push(line.trim());
+  }
+  flushParagraph();
+  flushList();
+  return out.join('\n');
+}
+
+function shell({ title, desc, url, body, type = 'website' }) {
+  const verify = config.naverSiteVerification &&
+    !config.naverSiteVerification.includes('NAVER_SITE_VERIFICATION_CODE')
+    ? `<meta name="naver-site-verification" content="${esc(config.naverSiteVerification)}">`
+    : '';
+
+  const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="google-site-verification" content="nCJS8MruCwdhY1zVoGXdNQXjJQwBQ2y4733sBP37YE4"><title>${esc(title)}</title><meta name="description" content="${esc(desc)}"><meta name="robots" content="index,follow,max-image-preview:large">${verify}<link rel="canonical" href="${esc(url)}"><link rel="alternate" type="application/rss+xml" href="/rss.xml"><meta property="og:type" content="${type}"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}"><meta property="og:url" content="${esc(url)}"><link rel="stylesheet" href="/assets/styles.css"></head><body><header class="site-header"><div class="header-inner"><a class="brand" href="/">${esc(config.title)}</a><nav class="nav"><a href="/">글 목록</a><a href="/rss.xml">RSS</a></nav></div></header>${body}<footer class="site-footer"><div class="wrap footer-inner"><span>© ${new Date().getFullYear()} ${esc(config.author)}</span><span>Static Blog</span></div></footer></body></html>`;
+  return applyBasePath(html);
+}
+
+fs.rmSync(OUT, { recursive: true, force: true });
+fs.mkdirSync(path.join(OUT, 'assets'), { recursive: true });
+fs.mkdirSync(path.join(OUT, 'posts'), { recursive: true });
+fs.copyFileSync(path.join(SRC, 'styles.css'), path.join(OUT, 'assets', 'styles.css'));
+fs.copyFileSync(path.join(SRC, 'app.js'), path.join(OUT, 'assets', 'app.js'));
+
+const posts = fs.readdirSync(CONTENT)
+  .filter((x) => x.endsWith('.md'))
+  .map((f) => {
+    const { m, b } = fm(fs.readFileSync(path.join(CONTENT, f), 'utf8'));
+    const slug = m.slug || path.basename(f, '.md');
+    const date = m.date || new Date().toISOString().slice(0, 10);
+    return {
+      title: m.title || slug,
+      slug,
+      date,
+      modified: m.modified || date,
+      description: m.description || b.replace(/[#*`]/g, '').slice(0, 150),
+      category: m.category || '기록',
+      tags: (m.tags || '').split(',').map((x) => x.trim()).filter(Boolean),
+      html: md(b),
+      url: `${base}/posts/${encodeURIComponent(slug)}/`,
+    };
+  })
+  .sort((a, b) => b.date.localeCompare(a.date));
+
+for (const p of posts) {
+  const tags = p.tags.map((t) => `<span class="tag">#${esc(t)}</span>`).join(' ');
+  const body = `<main class="wrap article-shell"><article class="article"><div class="article-meta"><span>${esc(p.date)}</span><span>${esc(p.category)}</span></div><h1>${esc(p.title)}</h1><p>${esc(p.description)}</p><div>${tags}</div><div class="article-body">${p.html}</div></article></main>`;
+  const dir = path.join(OUT, 'posts', p.slug);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'index.html'),
+    shell({ title: `${p.title} | ${config.title}`, desc: p.description, url: p.url, body, type: 'article' }),
+  );
+}
+
+const cats = [...new Set(posts.map((p) => p.category))];
+const cards = posts.map((p) => `<article class="post-card" data-post-card data-category="${esc(p.category)}" data-search="${esc([p.title, p.description, p.category, ...p.tags].join(' ').toLowerCase())}"><a href="/posts/${encodeURIComponent(p.slug)}/"><div class="meta"><span>${p.date}</span><span>${esc(p.category)}</span></div><h2>${esc(p.title)}</h2><p>${esc(p.description)}</p></a></article>`).join('');
+
+const home = `<main class="wrap"><section class="hero"><h1>${esc(config.title)}</h1><p>${esc(config.description)}</p></section><div class="controls"><input class="search" data-search type="search" placeholder="글 검색"><select class="category-filter" data-category><option value="">전체 카테고리</option>${cats.map((c) => `<option>${esc(c)}</option>`).join('')}</select></div><section class="post-grid">${cards}</section><p class="empty" data-empty hidden>조건에 맞는 글이 없습니다.</p></main><script src="/assets/app.js" defer></script>`;
+
+fs.writeFileSync(
+  path.join(OUT, 'index.html'),
+  shell({ title: config.title, desc: config.description, url: `${base}/`, body: home }),
+);
+
+fs.writeFileSync(
+  path.join(OUT, 'posts.json'),
+  JSON.stringify(posts.map(({ html, ...p }) => p), null, 2),
+);
+
+fs.writeFileSync(
+  path.join(OUT, 'sitemap.xml'),
+  `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${[
+    `<url><loc>${esc(base)}/</loc></url>`,
+    ...posts.map((p) => `<url><loc>${esc(p.url)}</loc><lastmod>${p.modified}</lastmod></url>`),
+  ].join('\n')}\n</urlset>\n`,
+);
+
+fs.writeFileSync(
+  path.join(OUT, 'rss.xml'),
+  `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>${esc(config.title)}</title><link>${esc(base)}/</link><description>${esc(config.description)}</description>${posts.slice(0, 50).map((p) => `<item><title>${esc(p.title)}</title><link>${esc(p.url)}</link><guid>${esc(p.url)}</guid><pubDate>${new Date(`${p.date}T00:00:00+09:00`).toUTCString()}</pubDate><description><![CDATA[${p.html.replace(/]]>/g, ']]]]><![CDATA[>')}]]></description></item>`).join('')}</channel></rss>`,
+);
+
+fs.writeFileSync(
+  path.join(OUT, 'robots.txt'),
+  `User-agent: *\nAllow: /\n\nUser-agent: Yeti\nAllow: /\n\nSitemap: ${base}/sitemap.xml\n`,
+);
+
+fs.writeFileSync(
+  path.join(OUT, '404.html'),
+  shell({
+    title: `404 | ${config.title}`,
+    desc: '페이지를 찾을 수 없습니다.',
+    url: `${base}/404.html`,
+    body: '<main class="wrap article-shell"><article class="article"><h1>페이지를 찾을 수 없습니다.</h1><p><a href="/">홈으로 돌아가기</a></p></article></main>',
+  }),
+);
+
+console.log(`빌드 완료: ${posts.length}개 글`);
