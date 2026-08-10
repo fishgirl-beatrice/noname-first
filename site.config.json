@@ -1,0 +1,9 @@
+{
+  "title": "기록의 페이지",
+  "description": "생각과 경험을 차분하게 기록하는 독립 블로그입니다.",
+  "author": "블로그 운영자",
+  "baseUrl": "https://example.com",
+  "language": "ko-KR",
+  "naverSiteVerification": "NAVER_SITE_VERIFICATION_CODE",
+  "postsPerPage": 12
+}
